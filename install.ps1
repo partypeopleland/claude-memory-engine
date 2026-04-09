@@ -45,6 +45,14 @@ if ($BACKUP_REPO_URL -notmatch "^https://github\.com/") {
   Warn "URL doesn't look like a GitHub HTTPS URL. Continuing anyway..."
 }
 
+# Inject GitHub username into URL to avoid account-picker popup on multi-account machines
+# e.g. https://github.com/you/repo → https://you@github.com/you/repo
+if ($BACKUP_REPO_URL -match '^https://github\.com/([^/]+)/' -and $BACKUP_REPO_URL -notmatch '@') {
+  $GH_USER = $Matches[1]
+  $BACKUP_REPO_URL = "https://$GH_USER@github.com/" + ($BACKUP_REPO_URL -replace '^https://github\.com/', '')
+  Info "Using authenticated URL: $BACKUP_REPO_URL"
+}
+
 # ──────────────────────────────────────────────
 # Create directories
 Section "Creating directories"
