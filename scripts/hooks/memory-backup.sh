@@ -4,7 +4,14 @@
 
 set -e
 
-AGENT_DIR="${MEMORY_ENGINE_HOME:-$HOME/.claude}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -n "$MEMORY_ENGINE_HOME" ]]; then
+  AGENT_DIR="$MEMORY_ENGINE_HOME"
+elif [[ -f "$SCRIPT_DIR/.memory-home" ]]; then
+  AGENT_DIR="$(sed "s|^~|$HOME|" "$SCRIPT_DIR/.memory-home")"
+else
+  AGENT_DIR="$HOME/.claude"
+fi
 CONFIG_FILE="$AGENT_DIR/memory-config.json"
 BACKUP_LOCAL="$AGENT_DIR/memory-backup"
 PROJECTS_DIR="$AGENT_DIR/projects"

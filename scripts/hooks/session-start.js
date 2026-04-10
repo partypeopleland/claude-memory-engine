@@ -11,7 +11,18 @@ const fs = require('fs');
 const path = require('path');
 
 const HOME           = process.env.HOME || process.env.USERPROFILE;
-const AGENT_DIR      = process.env.MEMORY_ENGINE_HOME || path.join(HOME, '.claude');
+
+function resolveAgentDir() {
+  if (process.env.MEMORY_ENGINE_HOME) return process.env.MEMORY_ENGINE_HOME;
+  try {
+    const configFile = path.join(__dirname, '.memory-home');
+    if (fs.existsSync(configFile)) {
+      return fs.readFileSync(configFile, 'utf-8').trim().replace(/^~/, HOME);
+    }
+  } catch (e) {}
+  return path.join(HOME, '.claude');
+}
+const AGENT_DIR      = resolveAgentDir();
 const SESSIONS_DIR   = path.join(AGENT_DIR, 'sessions');
 const EXPERIENCES_DIR = path.join(AGENT_DIR, 'experiences');
 const MAX_AGE_DAYS   = 7;
