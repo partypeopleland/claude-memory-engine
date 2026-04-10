@@ -57,10 +57,12 @@ fi
 # Create directories
 section "Creating directories"
 
-mkdir -p "$SCRIPTS_DIR" "$HOOKS_DIR" "$COMMANDS_DIR"
+EXPERIENCES_DIR="$CLAUDE_DIR/experiences"
+mkdir -p "$SCRIPTS_DIR" "$HOOKS_DIR" "$COMMANDS_DIR" "$EXPERIENCES_DIR"
 info "Created: $SCRIPTS_DIR"
 info "Created: $HOOKS_DIR"
 info "Created: $COMMANDS_DIR"
+info "Created: $EXPERIENCES_DIR"
 
 # ──────────────────────────────────────────────
 # Download hook scripts
@@ -73,6 +75,7 @@ HOOK_SCRIPTS=(
   "mid-session-checkpoint.js"
   "pre-push-check.js"
   "write-guard.js"
+  "post-tool-logger.js"
 )
 
 for script in "${HOOK_SCRIPTS[@]}"; do
@@ -93,13 +96,32 @@ section "Installing slash commands"
 COMMANDS=(
   "save" "reload" "backup" "sync" "recover"
   "reflect" "diary" "learn" "check" "full-check"
-  "compact-guide" "health" "search" "tasks"
+  "compact-guide" "health" "search" "tasks" "experience"
 )
 
 for cmd in "${COMMANDS[@]}"; do
   curl -fsSL "$REPO_URL/commands/memory/$cmd.md" -o "$COMMANDS_DIR/$cmd.md"
   info "Installed: commands/memory/$cmd.md"
 done
+
+# Install experience template
+curl -fsSL "$REPO_URL/template/experience.md" -o "$EXPERIENCES_DIR/_template.md" 2>/dev/null \
+  && info "Installed: experiences/_template.md" \
+  || warn "Could not fetch experience template (non-fatal)"
+
+# Create INDEX.md if not exists
+if [[ ! -f "$EXPERIENCES_DIR/INDEX.md" ]]; then
+  cat > "$EXPERIENCES_DIR/INDEX.md" << 'TMPL'
+# Experience Index
+
+Loaded at every session start. Use progressive disclosure:
+read this first → run `/memory:experience show <file>` to load full details when relevant.
+
+<!-- Format: - [YYYY-MM-DD] **Title** — `filename.md` — one-line summary (category: X) -->
+
+TMPL
+  info "Created: experiences/INDEX.md"
+fi
 
 # ──────────────────────────────────────────────
 # Merge settings.json (idempotent — dedup by command string)

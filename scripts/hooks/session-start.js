@@ -3,20 +3,20 @@
  * SessionStart Hook — Claude Memory Engine
  * 1. 載入上次 session 摘要
  * 2. 載入當前專案的記憶檔案（依 CWD 自動對應）
- * 3. 載入最近的踩坑紀錄
- * stdout 的內容會被 Claude 看到（注入 context）
+ * 3. 載入 Experience INDEX（AI 知道自己有哪些經驗）
+ * stdout 的內容會被 Claude / Gemini 看到（注入 context）
  */
 
 const fs = require('fs');
 const path = require('path');
 
-const HOME = process.env.HOME || process.env.USERPROFILE;
-const AGENT_DIR = process.env.MEMORY_ENGINE_HOME || path.join(HOME, '.claude');
-const SESSIONS_DIR = path.join(AGENT_DIR, 'sessions');
-const LEARNED_DIR = path.join(AGENT_DIR, 'skills', 'learned');
-const MAX_AGE_DAYS = 7;
+const HOME           = process.env.HOME || process.env.USERPROFILE;
+const AGENT_DIR      = process.env.MEMORY_ENGINE_HOME || path.join(HOME, '.claude');
+const SESSIONS_DIR   = path.join(AGENT_DIR, 'sessions');
+const EXPERIENCES_DIR = path.join(AGENT_DIR, 'experiences');
+const MAX_AGE_DAYS   = 7;
 
-// === 根據 CWD 計算 project memory dir（與 Claude Code 的路徑規則一致）===
+// === 根據 CWD 計算 project memory dir ===
 function getProjectMemoryDir() {
   const cwd = process.cwd();
   const parts = cwd.replace(/\\/g, '/').split('/').filter(Boolean);
@@ -32,7 +32,7 @@ function getProjectMemoryDir() {
   return null;
 }
 
-// === 找最近的 session 摘要 ===
+// === 找最近的 session 摘要（7 天內）===
 function findLatestSession() {
   if (!fs.existsSync(SESSIONS_DIR)) return null;
 
@@ -52,14 +52,13 @@ function findLatestSession() {
   return files.length > 0 ? files[0] : null;
 }
 
-// === 載入專案記憶（MEMORY.md 索引） ===
+// === 載入專案記憶（MEMORY.md 索引，前 60 行）===
 function loadProjectMemory(memDir) {
   const memoryFile = path.join(memDir, 'MEMORY.md');
   if (!fs.existsSync(memoryFile)) return null;
 
   const content = fs.readFileSync(memoryFile, 'utf-8').trim();
-  const lines = content.split('\n').slice(0, 60);
-  return lines.join('\n');
+  return content.split('\n').slice(0, 60).join('\n');
 }
 
 // === 找 24 小時內改過的 memory 檔案 ===
@@ -80,95 +79,47 @@ function findRecentMemoryChanges(memDir) {
     .map(f => f.name);
 }
 
-// === 找最近的踩坑紀錄 ===
-function findRecentPitfalls() {
-  if (!fs.existsSync(LEARNED_DIR)) return null;
+// === 載入 Experience INDEX（前 80 行）===
+// AI 藉此知道「我曾經有過哪些經驗」，需要時再以 /memory:experience show <file> 漸進揭露
+function loadExperienceIndex() {
+  const indexFile = path.join(EXPERIENCES_DIR, 'INDEX.md');
+  if (!fs.existsSync(indexFile)) return null;
 
-  const now = Date.now();
-  const maxAge = 3 * 24 * 60 * 60 * 1000;
+  const content = fs.readFileSync(indexFile, 'utf-8').trim();
+  if (!content || content.length < 10) return null;
 
-  const files = fs.readdirSync(LEARNED_DIR)
-    .filter(f => f.startsWith('auto-pitfall-') && f.endsWith('.md'))
-    .map(f => ({
-      name: f,
-      path: path.join(LEARNED_DIR, f),
-      mtime: fs.statSync(path.join(LEARNED_DIR, f)).mtimeMs
-    }))
-    .filter(f => (now - f.mtime) < maxAge)
-    .sort((a, b) => b.mtime - a.mtime);
-
-  return files.length > 0 ? files[0] : null;
+  return content.split('\n').slice(0, 80).join('\n');
 }
 
-// === /reflect 提醒：檢查上次跑 reflect 是什麼時候 ===
-function checkReflectReminder() {
-  if (!fs.existsSync(SESSIONS_DIR)) return null;
+// === 檢查上次 session 是否有存新的 experience ===
+// 若沒有，提醒 AI 回顧上次 session log 並考慮是否值得儲存
+function checkExperienceReminder(latestSession) {
+  if (!latestSession) return null;
 
   try {
-    const reflectFiles = fs.readdirSync(SESSIONS_DIR)
-      .filter(f => f.startsWith('reflect-') && f.endsWith('.md'))
-      .map(f => ({
-        name: f,
-        mtime: fs.statSync(path.join(SESSIONS_DIR, f)).mtimeMs
-      }))
-      .sort((a, b) => b.mtime - a.mtime);
-
-    if (reflectFiles.length === 0) {
-      return '[Memory Engine] /memory:reflect not run yet — try it after a few sessions!';
+    // 找 session 結束後是否有新增 experience 檔案
+    const sessionMtime = fs.statSync(latestSession.path).mtimeMs;
+    if (!fs.existsSync(EXPERIENCES_DIR)) {
+      // 完全沒有 experiences 目錄 → 提醒
+      return '[Experience] No experience directory yet. Use `/memory:experience save` to save valuable lessons from sessions.';
     }
 
-    const daysSince = Math.floor((Date.now() - reflectFiles[0].mtime) / (24 * 60 * 60 * 1000));
-    if (daysSince >= 7) {
-      return `[Memory Engine] Last /memory:reflect was ${daysSince} days ago — consider running it!`;
+    const newExps = fs.readdirSync(EXPERIENCES_DIR)
+      .filter(f => f.endsWith('.md') && f !== 'INDEX.md' && f !== '_template.md')
+      .map(f => ({ name: f, mtime: fs.statSync(path.join(EXPERIENCES_DIR, f)).mtimeMs }))
+      .filter(f => f.mtime > sessionMtime);
+
+    if (newExps.length > 0) {
+      return null; // 上次 session 後有存 experience，不用提醒
     }
-  } catch (e) {}
 
-  return null;
-}
+    // 上次 session 沒有存新 experience → 輕微提醒
+    const sessionDate = latestSession.name.split('-session.md')[0];
+    return `[Experience] Last session (${sessionDate}) had no experience saved. If anything worth remembering happened, run \`/memory:experience save\`.`;
 
-// === 踩坑內化檢查：同類踩坑出現 3+ 次就提醒 ===
-function checkRecurringPitfalls() {
-  if (!fs.existsSync(LEARNED_DIR)) return [];
-
-  const files = fs.readdirSync(LEARNED_DIR)
-    .filter(f => f.startsWith('auto-pitfall-') && f.endsWith('.md'));
-
-  if (files.length === 0) return [];
-
-  const typeMap = new Map();
-
-  for (const filename of files) {
-    const filepath = path.join(LEARNED_DIR, filename);
-    let content;
-    try { content = fs.readFileSync(filepath, 'utf-8'); } catch (e) { continue; }
-
-    const dateMatch = filename.match(/auto-pitfall-(\d{8})/);
-    const dateTag = dateMatch ? dateMatch[1] : filename;
-
-    const typeBlocks = content.match(/### (\S+)\n- (.+)/g);
-    if (!typeBlocks) continue;
-
-    for (const block of typeBlocks) {
-      const match = block.match(/### (\S+)\n- (.+)/);
-      if (!match) continue;
-      const type = match[1];
-      const description = match[2];
-
-      if (!typeMap.has(type)) typeMap.set(type, { count: 0, description, dates: new Set() });
-      const entry = typeMap.get(type);
-      if (!entry.dates.has(dateTag)) {
-        entry.dates.add(dateTag);
-        entry.count++;
-        entry.description = description;
-      }
-    }
+  } catch (e) {
+    return null;
   }
-
-  return [...typeMap.entries()]
-    .filter(([, v]) => v.count >= 3)
-    .sort((a, b) => b[1].count - a[1].count)
-    .slice(0, 2)
-    .map(([, v]) => ({ count: v.count, description: v.description }));
 }
 
 // === 主程式 ===
@@ -182,7 +133,6 @@ function main() {
       const content = fs.readFileSync(latest.path, 'utf-8').trim();
       if (content && content.length >= 20) {
         const dateSlug = latest.name.split('-session.md')[0];
-        // 從 summary 裡抽 Agent 欄位（若有）
         const agentMatch = content.match(/\*\*Agent:\*\*\s*(.+)/);
         const agentHint = agentMatch ? ` [by ${agentMatch[1].trim()}]` : '';
         output.push(`[Session Hook] 上次工作摘要（${dateSlug}${agentHint})：\n${content}`);
@@ -205,23 +155,15 @@ function main() {
       }
     }
 
-    // 3. 最近踩坑
-    const pitfall = findRecentPitfalls();
-    if (pitfall) {
-      const content = fs.readFileSync(pitfall.path, 'utf-8').trim();
-      const brief = content.split('\n').slice(0, 20).join('\n');
-      output.push(`\n[Auto Learn] Recent pitfall log:\n${brief}`);
+    // 3. 載入 Experience INDEX
+    const expIndex = loadExperienceIndex();
+    if (expIndex) {
+      output.push(`\n[Experience] Your experience index (use \`/memory:experience show <file>\` to load full details):\n${expIndex}`);
     }
 
-    // 4. 踩坑內化提醒
-    const recurring = checkRecurringPitfalls();
-    for (const item of recurring) {
-      output.push(`[Memory Engine] Pitfall repeated ${item.count} times: ${item.description} — consider adding to CLAUDE.md`);
-    }
-
-    // 5. /reflect 提醒
-    const reflectReminder = checkReflectReminder();
-    if (reflectReminder) output.push(reflectReminder);
+    // 4. 提醒是否需要存 experience
+    const expReminder = checkExperienceReminder(latest);
+    if (expReminder) output.push(expReminder);
 
   } catch (err) {
     output.push('[Memory Engine] Failed to load memory context, but session continues normally');

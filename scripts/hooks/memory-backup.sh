@@ -24,6 +24,13 @@ if [[ ! -d "$BACKUP_LOCAL/.git" ]]; then
   exit 0  # Not set up yet — skip silently
 fi
 
+# Sync global experiences (cross-project, stored in backup root)
+EXPERIENCES_DIR="$AGENT_DIR/experiences"
+if [[ -d "$EXPERIENCES_DIR" ]]; then
+  mkdir -p "$BACKUP_LOCAL/experiences"
+  cp -r "$EXPERIENCES_DIR/." "$BACKUP_LOCAL/experiences/"
+fi
+
 # Find all project memory directories and sync them
 if [[ -d "$PROJECTS_DIR" ]]; then
   for project_dir in "$PROJECTS_DIR"/*/; do

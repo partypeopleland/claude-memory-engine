@@ -1,19 +1,20 @@
 #!/usr/bin/env node
 /**
  * SessionEnd Hook — Claude Memory Engine
- * 1. 每次 session 結束自動儲存工作摘要
- * 2. 偵測踩坑模式，自動存到 learned/
- * 從 stdin 讀取 JSON（含 transcript_path）
+ * 1. 儲存本次 session 工作摘要（供下次 session-start 載入）
+ * 2. Auto-commit memory + experience 檔案到備份 repo（本地 commit，不 push）
+ *
+ * 注意：experience 的萃取是 AI 在 session 中主動做的事（/memory:experience save）
+ * session-end 不嘗試自動萃取，因為這需要 LLM 理解，不是 script 能做的事
  */
 
 const fs = require('fs');
 const path = require('path');
 
-const HOME = process.env.HOME || process.env.USERPROFILE;
+const HOME      = process.env.HOME || process.env.USERPROFILE;
 const AGENT_DIR = process.env.MEMORY_ENGINE_HOME || path.join(HOME, '.claude');
 const SESSIONS_DIR = path.join(AGENT_DIR, 'sessions');
-const LEARNED_DIR = path.join(AGENT_DIR, 'skills', 'learned');
-const DEBUG_LOG = path.join(SESSIONS_DIR, 'debug.log');
+const DEBUG_LOG    = path.join(SESSIONS_DIR, 'debug.log');
 const MAX_SESSIONS = 30;
 
 function ensureDir(dir) {
@@ -25,21 +26,16 @@ function debugLog(msg) {
   fs.appendFileSync(DEBUG_LOG, `[${new Date().toISOString()}] ${msg}\n`, 'utf-8');
 }
 
-// === 從 CWD 推斷專案名稱（取最後一層目錄） ===
-function detectProjectTag(userMessages, inputCwd, filesModified) {
-  const cwd = (inputCwd || process.cwd()).replace(/\\/g, '/');
-  const parts = cwd.split('/').filter(Boolean);
+// === 從 CWD 推斷專案名稱 ===
+function detectProjectTag(cwd) {
+  const normalized = (cwd || process.cwd()).replace(/\\/g, '/');
+  const parts = normalized.split('/').filter(Boolean);
   const lastDir = parts[parts.length - 1] || 'general';
-
-  // 過濾掉使用者目錄名稱
-  if (['Users', 'home', 'root'].some(p => lastDir.toLowerCase() === p.toLowerCase())) {
-    return 'general';
-  }
-
+  if (['Users', 'home', 'root'].some(p => lastDir.toLowerCase() === p.toLowerCase())) return 'general';
   return lastDir.toLowerCase();
 }
 
-// === 找 fallback transcript ===
+// === 找 fallback transcript（Claude 專用）===
 function findFallbackTranscript(originalPath) {
   const projectsDir = path.join(AGENT_DIR, 'projects');
   const searchDirs = [];
@@ -74,7 +70,7 @@ function findFallbackTranscript(originalPath) {
   return null;
 }
 
-// === 解析 transcript ===
+// === 解析 Claude JSONL transcript ===
 function parseTranscript(transcriptPath) {
   if (!transcriptPath) { debugLog('transcript_path is empty'); return null; }
 
@@ -90,21 +86,18 @@ function parseTranscript(transcriptPath) {
   const userMessages = [];
   const toolsUsed = new Set();
   const filesModified = new Set();
-  const toolCalls = [];
 
   for (const line of lines) {
     try {
       const entry = JSON.parse(line);
-      const entryType = entry.type;
       const msg = entry.message;
       if (!msg) continue;
 
-      if (entryType === 'user' && msg.content) {
-        const content = msg.content;
-        const text = typeof content === 'string'
-          ? content
-          : Array.isArray(content)
-            ? content.filter(c => c.type === 'text').map(c => c.text).join(' ')
+      if (entry.type === 'user' && msg.content) {
+        const text = typeof msg.content === 'string'
+          ? msg.content
+          : Array.isArray(msg.content)
+            ? msg.content.filter(c => c.type === 'text').map(c => c.text).join(' ')
             : '';
         const cleaned = text
           .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '')
@@ -116,26 +109,12 @@ function parseTranscript(transcriptPath) {
         }
       }
 
-      if (entryType === 'assistant' && Array.isArray(msg.content)) {
+      if (entry.type === 'assistant' && Array.isArray(msg.content)) {
         for (const block of msg.content) {
           if (block.type === 'tool_use') {
             toolsUsed.add(block.name);
-            const fp = block.input?.file_path || block.input?.path || block.input?.command || '';
-            toolCalls.push({ name: block.name, target: typeof fp === 'string' ? path.basename(fp) : '', id: block.id });
             if (['Edit', 'Write'].includes(block.name) && block.input?.file_path) {
               filesModified.add(path.basename(block.input.file_path));
-            }
-          }
-          if (block.type === 'tool_result' && block.content) {
-            const resultText = typeof block.content === 'string'
-              ? block.content
-              : Array.isArray(block.content)
-                ? block.content.filter(c => c.type === 'text').map(c => c.text).join(' ')
-                : '';
-            const lastCall = toolCalls[toolCalls.length - 1];
-            if (lastCall) {
-              lastCall.hasError = /error|Error|failed|Failed|not found|does not exist|TypeError|SyntaxError/.test(resultText);
-              lastCall.resultSnippet = resultText.substring(0, 150);
             }
           }
         }
@@ -143,77 +122,46 @@ function parseTranscript(transcriptPath) {
     } catch (e) {}
   }
 
-  return { userMessages, toolsUsed: [...toolsUsed], filesModified: [...filesModified], toolCalls };
+  return { userMessages, toolsUsed: [...toolsUsed], filesModified: [...filesModified] };
 }
 
-// === 踩坑偵測 ===
-function detectPitfalls(parsed) {
-  if (!parsed?.toolCalls) return [];
-  const pitfalls = [];
-  const normalRepeatTools = new Set(['TodoWrite', 'Agent', 'Read', 'Grep', 'Glob', 'WebSearch', 'WebFetch']);
+// === Gemini fallback: 從 checkpoint state 撈 messages ===
+function loadFromCheckpointState(sessionId) {
+  const stateFile = path.join(SESSIONS_DIR, '.checkpoint-state.json');
+  try {
+    if (!fs.existsSync(stateFile)) return null;
+    const state = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
 
-  const retryMap = new Map();
-  for (const call of parsed.toolCalls) {
-    if (normalRepeatTools.has(call.name)) continue;
-    const key = `${call.name}:${call.target}`;
-    retryMap.set(key, (retryMap.get(key) || 0) + 1);
-  }
-  for (const [key, count] of retryMap) {
-    if (count >= 5) {
-      const [tool, target] = key.split(':');
-      pitfalls.push({ type: 'retry', description: `${tool} retried ${count} times on ${target || 'same target'}` });
-    }
-  }
+    if (sessionId && state[sessionId]?.messages?.length > 0) return state[sessionId].messages;
 
-  for (let i = 0; i < parsed.toolCalls.length; i++) {
-    const call = parsed.toolCalls[i];
-    if (!call.hasError) continue;
-    for (let j = i + 1; j < parsed.toolCalls.length; j++) {
-      const later = parsed.toolCalls[j];
-      if (later.name === call.name && later.target === call.target && !later.hasError) {
-        pitfalls.push({ type: 'error-then-fix', description: `${call.name} failed then succeeded on ${call.target}`, errorSnippet: call.resultSnippet });
-        break;
-      }
-    }
-  }
-
-  const correctionKeywords = ['wrong', 'incorrect', 'not that', 'revert', 'undo', 'that\'s not'];
-  for (const msg of parsed.userMessages) {
-    if (correctionKeywords.some(kw => msg.toLowerCase().includes(kw))) {
-      pitfalls.push({ type: 'user-correction', description: `User correction: ${msg.substring(0, 80)}` });
-    }
-  }
-
-  return pitfalls;
+    const sessions = Object.values(state)
+      .filter(s => s.messages?.length > 0 && s.lastActivity)
+      .sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
+    return sessions.length > 0 ? sessions[0].messages : null;
+  } catch (e) { return null; }
 }
 
-// === 存踩坑紀錄 ===
-function savePitfalls(pitfalls) {
-  if (pitfalls.length === 0) return;
-  ensureDir(LEARNED_DIR);
+// === Gemini fallback: 從 post-tool-logger state 撈 tool 資料 ===
+function loadFromToolState(sessionId) {
+  const stateFile = path.join(SESSIONS_DIR, '.gemini-tool-state.json');
+  try {
+    if (!fs.existsSync(stateFile)) return null;
+    const state = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
 
-  const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
-  const slug = `auto-pitfall-${dateStr}`;
-  let filename = `${slug}.md`;
-  if (fs.existsSync(path.join(LEARNED_DIR, filename))) {
-    filename = `${slug}-${Math.random().toString(36).substring(2, 5)}.md`;
-  }
+    if (sessionId && state[sessionId]) return state[sessionId];
 
-  const content = `# Pitfall Log ${new Date().toISOString().split('T')[0]}
+    const sessions = Object.values(state)
+      .filter(s => s.lastActivity)
+      .sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
+    return sessions.length > 0 ? sessions[0] : null;
+  } catch (e) { return null; }
+}
 
-## Detected Issues
-
-${pitfalls.map(p => `### ${p.type}
-- ${p.description}
-${p.errorSnippet ? `- Error snippet: \`${p.errorSnippet}\`` : ''}`).join('\n\n')}
-
-## Lesson
-
-(Claude will read this at next session start as a reminder)
-`;
-
-  fs.writeFileSync(path.join(LEARNED_DIR, filename), content, 'utf-8');
-  debugLog(`Pitfall log saved: ${filename} (${pitfalls.length} items)`);
+// === 偵測呼叫來源 ===
+function detectAgent(data) {
+  if (data.transcript_path) return 'Claude Code';
+  if (data.agent === 'gemini' || data.agent_name === 'gemini') return 'Gemini CLI';
+  return 'Gemini CLI';
 }
 
 // === 清理舊 session ===
@@ -229,54 +177,6 @@ function cleanOldSessions() {
   }
 }
 
-// === 從 checkpoint state 撈 messages（Gemini fallback）===
-function loadFromCheckpointState(sessionId) {
-  const stateFile = path.join(SESSIONS_DIR, '.checkpoint-state.json');
-  try {
-    if (!fs.existsSync(stateFile)) return null;
-    const state = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
-
-    if (sessionId && state[sessionId] && state[sessionId].messages?.length > 0) {
-      return state[sessionId].messages;
-    }
-
-    // fallback：取最近活躍的 session
-    const sessions = Object.values(state)
-      .filter(s => s.messages?.length > 0 && s.lastActivity)
-      .sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
-    return sessions.length > 0 ? sessions[0].messages : null;
-  } catch (e) {
-    return null;
-  }
-}
-
-// === 從 post-tool-logger state 撈 tool 資料（Gemini fallback）===
-function loadFromToolState(sessionId) {
-  const stateFile = path.join(SESSIONS_DIR, '.gemini-tool-state.json');
-  try {
-    if (!fs.existsSync(stateFile)) return null;
-    const state = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
-
-    if (sessionId && state[sessionId]) return state[sessionId];
-
-    // fallback：最近活躍的
-    const sessions = Object.values(state)
-      .filter(s => s.lastActivity)
-      .sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
-    return sessions.length > 0 ? sessions[0] : null;
-  } catch (e) {
-    return null;
-  }
-}
-
-// === 偵測呼叫來源 ===
-function detectAgent(data) {
-  if (data.transcript_path) return 'Claude Code';
-  if (data.agent === 'gemini' || data.agent_name === 'gemini') return 'Gemini CLI';
-  // 透過 transcript_path 缺失判斷為非 Claude
-  return 'Gemini CLI';
-}
-
 // === 主程式 ===
 function main(inputData) {
   debugLog('=== session-end start ===');
@@ -286,10 +186,9 @@ function main(inputData) {
     try { data = JSON.parse(inputData); } catch (e) { debugLog(`JSON parse error: ${e.message}`); return; }
 
     const agentLabel = detectAgent(data);
-    const transcriptPath = data.transcript_path;
-    let parsed = parseTranscript(transcriptPath);
+    let parsed = parseTranscript(data.transcript_path);
 
-    // Fallback for Gemini CLI (no JSONL transcript)
+    // Gemini fallback
     if (!parsed || parsed.userMessages.length === 0) {
       debugLog(`Transcript unavailable (${agentLabel}), trying checkpoint + tool state...`);
 
@@ -297,31 +196,30 @@ function main(inputData) {
       const toolState = loadFromToolState(data.session_id);
 
       if (!messages || messages.length === 0) {
-        debugLog('No messages found in any state, skipping');
+        debugLog('No messages found, skipping');
         return;
       }
 
       parsed = {
         userMessages:  messages,
-        toolsUsed:     toolState?.tools      || [],
-        filesModified: toolState?.files      || [],
-        toolCalls:     toolState?.toolCalls  || []
+        toolsUsed:     toolState?.tools  || [],
+        filesModified: toolState?.files  || []
       };
-      debugLog(`Gemini fallback: ${messages.length} msgs, ${parsed.toolsUsed.length} tools, ${parsed.filesModified.length} files`);
+      debugLog(`Gemini fallback: ${messages.length} msgs, ${parsed.toolsUsed.length} tools`);
     }
 
     ensureDir(SESSIONS_DIR);
     cleanOldSessions();
 
     const now = new Date();
-    const dateStr = now.toISOString().split('T')[0];
-    const timeStr = now.toTimeString().split(' ')[0].substring(0, 5);
-    const shortId = Math.random().toString(36).substring(2, 6);
+    const dateStr  = now.toISOString().split('T')[0];
+    const timeStr  = now.toTimeString().split(' ')[0].substring(0, 5);
+    const shortId  = Math.random().toString(36).substring(2, 6);
     const filename = `${dateStr}-${shortId}-session.md`;
 
-    const projectTag = detectProjectTag(parsed.userMessages, data.cwd, parsed.filesModified);
-    const recentMessages = parsed.userMessages.slice(-8);
-    const titleHint = parsed.userMessages.filter(m => m.length > 3).slice(0, 5).join(' ').substring(0, 60).replace(/\n/g, ' ');
+    const projectTag    = detectProjectTag(data.cwd);
+    const recentMsgs    = parsed.userMessages.slice(-8);
+    const titleHint     = parsed.userMessages.filter(m => m.length > 3).slice(0, 5).join(' ').substring(0, 60).replace(/\n/g, ' ');
 
     const summary = `# Session: ${dateStr}
 **Project:** ${projectTag}
@@ -331,7 +229,7 @@ function main(inputData) {
 **Messages:** ${parsed.userMessages.length}
 
 ## User Requests
-${recentMessages.map(m => `- ${m}`).join('\n')}
+${recentMsgs.map(m => `- ${m}`).join('\n')}
 
 ## Tools Used
 ${parsed.toolsUsed.join(', ') || 'none'}
@@ -343,11 +241,7 @@ ${parsed.filesModified.length > 0 ? parsed.filesModified.map(f => `- ${f}`).join
     fs.writeFileSync(path.join(SESSIONS_DIR, filename), summary, 'utf-8');
     debugLog(`Session summary saved: ${filename} (${agentLabel})`);
 
-    // 踩坑偵測（Claude 才有完整 toolCalls 資料）
-    const pitfalls = detectPitfalls(parsed);
-    if (pitfalls.length > 0) savePitfalls(pitfalls);
-
-    // 嘗試自動備份（只 commit，不 push）
+    // Auto-commit memory + experiences（本地 commit，不 push）
     try {
       const { execSync } = require('child_process');
       const backupScript = path.join(AGENT_DIR, 'scripts', 'hooks', 'memory-backup.sh');

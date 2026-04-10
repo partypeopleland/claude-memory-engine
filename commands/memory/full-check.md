@@ -19,9 +19,9 @@ Includes everything from `/memory:check` plus:
 ### Environment Config
 - `~/.claude/settings.json` — Claude hooks configured?
 - `~/.gemini/settings.json` — Gemini hooks configured? (if using Gemini CLI)
-- `~/.claude/scripts/hooks/` — all hook scripts exist?
+- `~/.claude/scripts/hooks/` — all hook scripts present?
 - `~/.claude/sessions/` — session directory exists?
-- `~/.claude/skills/learned/` — learned directory exists?
+- `~/.claude/experiences/INDEX.md` — experience index exists? how many entries?
 - `~/.claude/memory-config.json` — backup repo configured?
 
 ### Hook Scripts Status
