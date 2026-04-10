@@ -8,8 +8,9 @@ const fs = require('fs');
 const path = require('path');
 
 const HOME = process.env.HOME || process.env.USERPROFILE;
-const PROJECTS_DIR = path.join(HOME, '.claude', 'projects');
-const STATE_FILE = path.join(HOME, '.claude', 'scripts', 'hooks', '.memory-sync-state.json');
+const AGENT_DIR = process.env.MEMORY_ENGINE_HOME || path.join(HOME, '.claude');
+const PROJECTS_DIR = path.join(AGENT_DIR, 'projects');
+const STATE_FILE = path.join(AGENT_DIR, 'scripts', 'hooks', '.memory-sync-state.json');
 
 function getProjectMemoryDir() {
   const parts = process.cwd().replace(/\\/g, '/').split('/').filter(Boolean);

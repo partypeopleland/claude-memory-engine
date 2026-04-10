@@ -4,10 +4,10 @@
 
 set -e
 
-CLAUDE_DIR="${HOME}/.claude"
-CONFIG_FILE="$CLAUDE_DIR/memory-config.json"
-BACKUP_LOCAL="$CLAUDE_DIR/memory-backup"
-PROJECTS_DIR="$CLAUDE_DIR/projects"
+AGENT_DIR="${MEMORY_ENGINE_HOME:-$HOME/.claude}"
+CONFIG_FILE="$AGENT_DIR/memory-config.json"
+BACKUP_LOCAL="$AGENT_DIR/memory-backup"
+PROJECTS_DIR="$AGENT_DIR/projects"
 
 # Check config exists
 if [[ ! -f "$CONFIG_FILE" ]]; then
@@ -38,7 +38,7 @@ if [[ -d "$PROJECTS_DIR" ]]; then
     # Try to find a project-map entry, otherwise use hash as name
     project_name=$(node -e "
       const fs = require('fs');
-      const mapFile = '$BACKUP_LOCAL/project-map.json';
+      const mapFile = '${BACKUP_LOCAL}/project-map.json';
       if (!fs.existsSync(mapFile)) { console.log('$hash'); process.exit(0); }
       const map = JSON.parse(fs.readFileSync(mapFile, 'utf-8'));
       const entry = Object.entries(map).find(([name, h]) => h === '$hash');

@@ -10,7 +10,7 @@ Store information so the next session's Claude knows about it.
    - `feedback_*.md` — corrections or confirmed approaches
    - `project_*.md` — ongoing work, goals, incidents
    - `reference_*.md` — pointers to external resources
-3. **Skip if already in CLAUDE.md** — CLAUDE.md is auto-loaded every session, so don't duplicate its content
+3. **Skip if already in the agent instruction file** — CLAUDE.md (Claude Code) or GEMINI.md (Gemini CLI) is auto-loaded every session; don't duplicate its content
 4. **Never write directly to MEMORY.md** — MEMORY.md is an index of pointers, not a content store
 5. **Report** — Tell the user: "Saved to {filename}, section {section name}" or "Updated {filename}, changed {what}"
 

@@ -4,11 +4,12 @@ Quick status report of the memory system's key metrics.
 
 ## Steps
 
-1. **Scan memory directory** — `~/.claude/projects/{project-id}/memory/`
+1. **Scan memory directory** — `~/.claude/projects/{project-id}/memory/` (shared by both Claude and Gemini)
 2. **Scan sessions directory** — `~/.claude/sessions/`
 3. **Scan learned directory** — `~/.claude/skills/learned/`
 4. **Check debug log** — `~/.claude/sessions/debug.log` (last 5 lines)
 5. **Check config** — `~/.claude/memory-config.json` (backup repo configured?)
+6. **Check Gemini hooks** — `~/.gemini/settings.json` (if using Gemini CLI)
 
 ## Output Format
 

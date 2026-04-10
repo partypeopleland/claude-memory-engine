@@ -17,7 +17,8 @@ Includes everything from `/memory:check` plus:
 - Flag files over 200 lines
 
 ### Environment Config
-- `~/.claude/settings.json` — hooks configured?
+- `~/.claude/settings.json` — Claude hooks configured?
+- `~/.gemini/settings.json` — Gemini hooks configured? (if using Gemini CLI)
 - `~/.claude/scripts/hooks/` — all hook scripts exist?
 - `~/.claude/sessions/` — session directory exists?
 - `~/.claude/skills/learned/` — learned directory exists?

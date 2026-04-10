@@ -9,7 +9,7 @@ const path = require('path');
 const os = require('os');
 const readline = require('readline');
 
-const logDir   = path.join(os.homedir(), '.claude');
+const logDir   = process.env.MEMORY_ENGINE_HOME || path.join(os.homedir(), '.claude');
 const logFile  = path.join(logDir, 'skill-usage.log');
 const debugFile = path.join(logDir, 'skill-usage.debug');
 

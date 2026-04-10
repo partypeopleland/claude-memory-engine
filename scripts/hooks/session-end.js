@@ -10,8 +10,9 @@ const fs = require('fs');
 const path = require('path');
 
 const HOME = process.env.HOME || process.env.USERPROFILE;
-const SESSIONS_DIR = path.join(HOME, '.claude', 'sessions');
-const LEARNED_DIR = path.join(HOME, '.claude', 'skills', 'learned');
+const AGENT_DIR = process.env.MEMORY_ENGINE_HOME || path.join(HOME, '.claude');
+const SESSIONS_DIR = path.join(AGENT_DIR, 'sessions');
+const LEARNED_DIR = path.join(AGENT_DIR, 'skills', 'learned');
 const DEBUG_LOG = path.join(SESSIONS_DIR, 'debug.log');
 const MAX_SESSIONS = 30;
 
@@ -40,7 +41,7 @@ function detectProjectTag(userMessages, inputCwd, filesModified) {
 
 // === 找 fallback transcript ===
 function findFallbackTranscript(originalPath) {
-  const projectsDir = path.join(HOME, '.claude', 'projects');
+  const projectsDir = path.join(AGENT_DIR, 'projects');
   const searchDirs = [];
 
   if (originalPath) {
@@ -279,7 +280,7 @@ ${parsed.filesModified.length > 0 ? parsed.filesModified.map(f => `- ${f}`).join
     // 嘗試自動備份（只 commit，不 push）
     try {
       const { execSync } = require('child_process');
-      const backupScript = path.join(HOME, '.claude', 'scripts', 'hooks', 'memory-backup.sh');
+      const backupScript = path.join(AGENT_DIR, 'scripts', 'hooks', 'memory-backup.sh');
       if (fs.existsSync(backupScript)) {
         execSync(`bash "${backupScript}"`, { timeout: 10000, stdio: 'ignore' });
         debugLog('Auto backup commit done');

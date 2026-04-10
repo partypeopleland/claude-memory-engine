@@ -4,10 +4,10 @@ Review recent sessions, refine memory files, and extract patterns. Run this afte
 
 ## Phase 1: Review + Organize
 
-1. **Read session index** — Load `~/.claude/sessions/project-index.md`
+1. **Read session index** — Load `~/.claude/sessions/project-index.md` (or `~/.gemini/sessions/` if using Gemini CLI)
    - If a project is specified (e.g., `/memory:reflect myproject`) — only review that project's sessions
 2. **Read session summaries** — Load session files from the last 7 days (max 10)
-3. **Read pitfall records** — Scan `~/.claude/skills/learned/auto-pitfall-*.md`
+3. **Read pitfall records** — Scan `~/.claude/skills/learned/auto-pitfall-*.md` (shared between Claude and Gemini)
 4. **Read memory files** — Scan all `memory/*.md` files
 5. **Tag each item** — `valid` / `stale` / `duplicate` / `needs-update`
 
@@ -20,9 +20,9 @@ Review recent sessions, refine memory files, and extract patterns. Run this afte
 ## Phase 3: Analysis + Cleanup
 
 9. **Analyze patterns** — Most common work types, recurring pitfalls, new preferences
-10. **Propose CLAUDE.md updates** — List suggestions (don't auto-modify — wait for confirmation)
+10. **Propose instruction file updates** — List suggestions for CLAUDE.md or GEMINI.md (don't auto-modify — wait for confirmation)
 11. **Cleanup list** — Flag internalized pitfall records and merged duplicates for deletion (delayed one cycle)
-12. **Save reflect report** — Write to `~/.claude/sessions/reflect-{date}.md`
+12. **Save reflect report** — Write to `~/.claude/sessions/reflect-{date}.md` (shared storage)
 
 ## Output Format
 
@@ -40,7 +40,7 @@ Actions taken:
 Patterns found:
 1. {pattern} → Suggestion: {action}
 
-CLAUDE.md suggestions (confirm before applying):
+Instruction file suggestions (CLAUDE.md / GEMINI.md) — confirm before applying:
 - [ ] Add rule: {rule}
 
 Cleanup queue (will delete next reflect cycle):
@@ -49,6 +49,6 @@ Cleanup queue (will delete next reflect cycle):
 
 ## Notes
 
-- CLAUDE.md changes are proposed, not auto-applied — user confirms first
+- CLAUDE.md / GEMINI.md changes are proposed, not auto-applied — user confirms first
 - Cleanup is delayed one cycle: flag now, delete next time
 - If no sessions exist yet, just report current memory status

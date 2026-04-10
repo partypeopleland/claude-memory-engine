@@ -23,7 +23,7 @@ Run a quick scan of the memory system's health. For daily use.
 - MEMORY.md entries pointing to non-existent files
 
 ### 4. Environment Status
-- CLAUDE.md: exists and readable?
+- CLAUDE.md / GEMINI.md: exists and readable?
 - MEMORY.md: line count and capacity
 - commands/memory/: how many commands
 - skills/learned/: how many pitfall records
@@ -34,7 +34,7 @@ Run a quick scan of the memory system's health. For daily use.
 === Quick Health Check ===
 
 Environment:
-- CLAUDE.md: OK ({N} lines)
+- CLAUDE.md / GEMINI.md: OK ({N} lines)
 - MEMORY.md: OK/WARNING ({N}/200 lines)
 - commands/memory/: {N} commands
 - skills/learned/: {N} pitfall records

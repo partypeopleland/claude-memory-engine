@@ -11,8 +11,9 @@ const fs = require('fs');
 const path = require('path');
 
 const HOME = process.env.HOME || process.env.USERPROFILE;
-const SESSIONS_DIR = path.join(HOME, '.claude', 'sessions');
-const LEARNED_DIR = path.join(HOME, '.claude', 'skills', 'learned');
+const AGENT_DIR = process.env.MEMORY_ENGINE_HOME || path.join(HOME, '.claude');
+const SESSIONS_DIR = path.join(AGENT_DIR, 'sessions');
+const LEARNED_DIR = path.join(AGENT_DIR, 'skills', 'learned');
 const MAX_AGE_DAYS = 7;
 
 // === 根據 CWD 計算 project memory dir（與 Claude Code 的路徑規則一致）===
@@ -25,7 +26,7 @@ function getProjectMemoryDir() {
   const rest = parts.slice(1).join('-');
   const projectId = `${drive}--${rest}`;
 
-  const memDir = path.join(HOME, '.claude', 'projects', projectId, 'memory');
+  const memDir = path.join(AGENT_DIR, 'projects', projectId, 'memory');
   if (fs.existsSync(memDir)) return { dir: memDir, projectId };
 
   return null;

@@ -9,7 +9,8 @@ const fs = require('fs');
 const path = require('path');
 
 const HOME = process.env.HOME || process.env.USERPROFILE;
-const SESSIONS_DIR = path.join(HOME, '.claude', 'sessions');
+const AGENT_DIR = process.env.MEMORY_ENGINE_HOME || path.join(HOME, '.claude');
+const SESSIONS_DIR = path.join(AGENT_DIR, 'sessions');
 const STATE_FILE = path.join(SESSIONS_DIR, '.checkpoint-state.json');
 const CHECKPOINT_INTERVAL = 20;
 

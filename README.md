@@ -7,24 +7,27 @@ A portable memory system for [Claude Code](https://claude.ai/code). Install once
 - **Persists memory across sessions** — Claude reads your preferences, past feedback, and project context at session start
 - **Backs up to GitHub** — your memory syncs to a private repo you own
 - **Restores on new machines** — install with one command, memory comes back automatically
-- **14 slash commands** — manage memory directly from Claude Code
+- **14 slash commands** — manage memory directly from Claude Code or Gemini CLI
+- **Works with both Claude Code and Gemini CLI** — shared memory, no duplication
 
 ## Prerequisites
 
-- [Claude Code](https://claude.ai/code) installed
+- [Claude Code](https://claude.ai/code) and/or [Gemini CLI](https://github.com/google-gemini/gemini-cli) installed
 - [Node.js](https://nodejs.org/) v18+
 - [git](https://git-scm.com/) installed
 - A private GitHub repository for your memory backup (can be empty)
 
 ## Installation
 
-### Linux / macOS / WSL
+### Step 1 — Install for Claude Code
+
+#### Linux / macOS / WSL
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/partypeopleland/claude-memory-engine/main/install.sh | bash
 ```
 
-### Windows (PowerShell)
+#### Windows (PowerShell)
 
 ```powershell
 irm https://raw.githubusercontent.com/partypeopleland/claude-memory-engine/main/install.ps1 | iex
@@ -39,6 +42,29 @@ The installer will:
 6. If the backup repo has memory → restore it to your machine
 
 After installation, **restart Claude Code** to activate the hooks.
+
+### Step 2 (optional) — Add Gemini CLI support
+
+> Memory is **shared** between Claude Code and Gemini CLI. Both read from and write to the same `~/.claude/` storage.
+
+#### Linux / macOS / WSL
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/partypeopleland/claude-memory-engine/main/install-gemini.sh | bash
+```
+
+#### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/partypeopleland/claude-memory-engine/main/install-gemini.ps1 | iex
+```
+
+The Gemini add-on installer:
+1. Verifies Claude Memory Engine is already installed
+2. Installs slash commands to `~/.gemini/commands/memory/`
+3. Configures hooks in `~/.gemini/settings.json` (pointing to shared scripts in `~/.claude/`)
+
+After installation, **restart Gemini CLI** to activate the hooks.
 
 ## Slash Commands
 
@@ -75,9 +101,9 @@ Memory files are categorized into four types:
 ## How Memory Is Stored
 
 ```
-~/.claude/
-├── settings.json               ← hooks configured here
-├── scripts/hooks/              ← hook scripts (JS)
+~/.claude/                      ← shared storage (Claude + Gemini both use this)
+├── settings.json               ← Claude Code hooks
+├── scripts/hooks/              ← shared hook scripts (JS)
 │   ├── session-start.js        ← loads context at session start
 │   ├── session-end.js          ← saves summary + detects pitfalls
 │   ├── memory-sync.js          ← detects memory changes between prompts
@@ -88,13 +114,17 @@ Memory files are categorized into four types:
 ├── hooks/
 │   ├── log-skill-ai.js
 │   └── log-skill-user.js
-├── commands/memory/            ← slash commands (14 files)
+├── commands/memory/            ← Claude Code slash commands (14 files)
 ├── memory-config.json          ← backup repo URL
 └── projects/
     └── <project-hash>/
-        └── memory/             ← per-project memory files
+        └── memory/             ← per-project memory files (shared)
             ├── MEMORY.md       ← index (loaded every session)
             └── *.md            ← typed memory files
+
+~/.gemini/                      ← Gemini CLI config (add-on only)
+├── settings.json               ← Gemini hooks (point to ~/.claude/scripts/)
+└── commands/memory/            ← Gemini CLI slash commands (14 files)
 ```
 
 ## Backup Repository
@@ -129,7 +159,7 @@ Run the installer with your backup repo URL. For projects that weren't auto-rest
 
 ## Uninstall
 
-Remove the installed files:
+### Remove Claude Code installation
 
 ```bash
 rm -rf ~/.claude/scripts/hooks/
@@ -139,3 +169,19 @@ rm ~/.claude/memory-config.json
 ```
 
 Then remove the hooks section from `~/.claude/settings.json` manually. Your memory files in `~/.claude/projects/` are not affected.
+
+### Remove Gemini CLI add-on only
+
+#### Linux / macOS / WSL
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/partypeopleland/claude-memory-engine/main/uninstall-gemini.sh | bash
+```
+
+#### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/partypeopleland/claude-memory-engine/main/uninstall-gemini.ps1 | iex
+```
+
+This removes `~/.gemini/commands/memory/` and the hooks from `~/.gemini/settings.json`. Shared scripts and memory files are untouched.
