@@ -42,7 +42,7 @@ Info "Created: $COMMANDS_DIR"
 # ──────────────────────────────────────────────
 Section "Installing slash commands to ~/.gemini/commands/memory/"
 
-$Commands = @("save","reload","backup","sync","recover","reflect","diary","learn","check","full-check","compact-guide","health","search","tasks")
+$Commands = @("save","reload","backup","sync","recover","reflect","diary","learn","check","full-check","compact-guide","health","search","tasks","experience")
 foreach ($cmd in $Commands) {
   Invoke-WebRequest "$REPO_URL/commands/memory/$cmd.md" -OutFile "$COMMANDS_DIR\$cmd.md" -UseBasicParsing
   Info "Installed: commands/memory/$cmd.md"

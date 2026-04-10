@@ -49,16 +49,18 @@ if ($BACKUP_REPO_URL -notmatch "^https://github\.com/") {
 # Create directories
 Section "Creating directories"
 
+$EXPERIENCES_DIR = "$CLAUDE_DIR\experiences"
 New-Item -ItemType Directory -Force -Path $SCRIPTS_DIR | Out-Null
 New-Item -ItemType Directory -Force -Path $HOOKS_DIR | Out-Null
 New-Item -ItemType Directory -Force -Path $COMMANDS_DIR | Out-Null
+New-Item -ItemType Directory -Force -Path $EXPERIENCES_DIR | Out-Null
 Info "Directories created"
 
 # ──────────────────────────────────────────────
 # Download hook scripts
 Section "Installing hook scripts"
 
-$HookScripts = @("session-start.js","session-end.js","memory-sync.js","mid-session-checkpoint.js","pre-push-check.js","write-guard.js")
+$HookScripts = @("session-start.js","session-end.js","memory-sync.js","mid-session-checkpoint.js","pre-push-check.js","write-guard.js","post-tool-logger.js")
 foreach ($script in $HookScripts) {
   Invoke-WebRequest "$REPO_URL/scripts/hooks/$script" -OutFile "$SCRIPTS_DIR\$script" -UseBasicParsing
   Info "Installed: scripts/hooks/$script"
@@ -74,10 +76,30 @@ foreach ($script in $UtilHooks) {
 # Download slash commands
 Section "Installing slash commands"
 
-$Commands = @("save","reload","backup","sync","recover","reflect","diary","learn","check","full-check","compact-guide","health","search","tasks")
+$Commands = @("save","reload","backup","sync","recover","reflect","diary","learn","check","full-check","compact-guide","health","search","tasks","experience")
 foreach ($cmd in $Commands) {
   Invoke-WebRequest "$REPO_URL/commands/memory/$cmd.md" -OutFile "$COMMANDS_DIR\$cmd.md" -UseBasicParsing
   Info "Installed: commands/memory/$cmd.md"
+}
+
+# Install experience template
+try {
+  Invoke-WebRequest "$REPO_URL/template/experience.md" -OutFile "$EXPERIENCES_DIR\_template.md" -UseBasicParsing
+  Info "Installed: experiences/_template.md"
+} catch { Warn "Could not fetch experience template (non-fatal)" }
+
+# Create INDEX.md if not exists
+if (-not (Test-Path "$EXPERIENCES_DIR\INDEX.md")) {
+  @"
+# Experience Index
+
+Loaded at every session start. Use progressive disclosure:
+read this first -> run ``/memory:experience show <file>`` to load full details when relevant.
+
+<!-- Format: - [YYYY-MM-DD] **Title** — ``filename.md`` — one-line summary (category: X) -->
+
+"@ | Set-Content "$EXPERIENCES_DIR\INDEX.md" -Encoding UTF8
+  Info "Created: experiences/INDEX.md"
 }
 
 # ──────────────────────────────────────────────

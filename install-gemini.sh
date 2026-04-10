@@ -54,7 +54,7 @@ section "Installing slash commands to ~/.gemini/commands/memory/"
 COMMANDS=(
   "save" "reload" "backup" "sync" "recover"
   "reflect" "diary" "learn" "check" "full-check"
-  "compact-guide" "health" "search" "tasks"
+  "compact-guide" "health" "search" "tasks" "experience"
 )
 
 for cmd in "${COMMANDS[@]}"; do
