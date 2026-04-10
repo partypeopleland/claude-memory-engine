@@ -1,32 +1,34 @@
 # /memory:experience -- Save or Review Experiences
 
-Save a meaningful experience from this session, or review past experiences.
+Experiences are automatically extracted at the start of each new session by reviewing the previous session log. This command is for **manual** saving when you want to preserve something specific right now.
 
 ## Usage
 
-- `/memory:experience save` — Save a new experience from this session
-- `/memory:experience list` — Show the INDEX (same as what loads at session start)
+- `/memory:experience` — Review this session so far and save anything worth preserving (AI decides)
+- `/memory:experience save` — Same as above
+- `/memory:experience save <description>` — Save a specific thing the user just described
+- `/memory:experience list` — Show the full INDEX
 - `/memory:experience show <slug>` — Load the full content of a specific experience file
-- `/memory:experience edit <slug>` — Open and update an existing experience
 
-## Saving a New Experience
+## How Automatic Saving Works
 
-### Steps
+At the start of every new session, if the previous session was substantial (≥5 messages or had file modifications), the session log is automatically injected and you are instructed to review it and save valuable experiences — **without the user needing to ask**.
 
-1. **Determine if it's worth saving** — Ask: "Would this help future sessions avoid a mistake or handle a situation better?" If yes, proceed.
+## Manual Save Steps
+
+1. **Determine if it's worth saving** — Ask: "Would this help future sessions avoid a mistake or handle this better?" If yes, proceed.
 
 2. **Write the experience file**
    - Filename: `~/.claude/experiences/YYYY-MM-DD-short-slug.md`
-   - Copy the template from `~/.claude/experiences/_template.md` (or use the format below)
-   - Fill in all sections: Context, What Happened, Root Cause, Lesson, How to Apply
+   - Use the template at `~/.claude/experiences/_template.md`
 
 3. **Update INDEX.md** — Add one line to `~/.claude/experiences/INDEX.md`:
    ```
    - [YYYY-MM-DD] **[Title]** — `filename.md` — one-line summary (category: X)
    ```
-   Add it under the correct category section. Create the section if it doesn't exist.
+   Add under the correct category. Create the category section if needed.
 
-4. **Report** — Tell the user: "Saved experience: [title] → [filename]"
+4. **Report** — "Saved: [title] → [filename]"
 
 ## Experience File Format
 
@@ -67,14 +69,11 @@ tags: [tag1, tag2]
 
 ## git
 - [2026-04-10] **Rebase conflict overwrote teammate's work** — `exp-20260410-rebase.md` — always fetch before rebase on shared branches
-
-## architecture
-- ...
 ```
 
 ## Notes
 
 - Do NOT save trivial or obvious things
 - One experience per distinct event — don't bundle multiple lessons into one file
-- When in doubt whether to save: save it. It can always be pruned during `/memory:reflect`
-- The INDEX is loaded at every session start — keep each line under 120 characters
+- Keep INDEX entries under 120 characters
+- Experiences are permanent assets — pruning happens during `/memory:reflect`

@@ -91,35 +91,53 @@ function loadExperienceIndex() {
   return content.split('\n').slice(0, 80).join('\n');
 }
 
-// === 檢查上次 session 是否有存新的 experience ===
-// 若沒有，提醒 AI 回顧上次 session log 並考慮是否值得儲存
-function checkExperienceReminder(latestSession) {
-  if (!latestSession) return null;
+// === 讀取並消費「待回顧」標記 ===
+// session-end 在 substantial session 後會留下此標記
+// 我們讀取、注入指令後立即刪除（避免重複觸發）
+function consumePendingExperienceReview() {
+  const pendingFile = path.join(SESSIONS_DIR, '.pending-experience-review.json');
+  if (!fs.existsSync(pendingFile)) return null;
 
   try {
-    // 找 session 結束後是否有新增 experience 檔案
-    const sessionMtime = fs.statSync(latestSession.path).mtimeMs;
-    if (!fs.existsSync(EXPERIENCES_DIR)) {
-      // 完全沒有 experiences 目錄 → 提醒
-      return '[Experience] No experience directory yet. Use `/memory:experience save` to save valuable lessons from sessions.';
-    }
+    const meta        = JSON.parse(fs.readFileSync(pendingFile, 'utf-8'));
+    const sessionPath = path.join(SESSIONS_DIR, meta.sessionFile);
 
-    const newExps = fs.readdirSync(EXPERIENCES_DIR)
-      .filter(f => f.endsWith('.md') && f !== 'INDEX.md' && f !== '_template.md')
-      .map(f => ({ name: f, mtime: fs.statSync(path.join(EXPERIENCES_DIR, f)).mtimeMs }))
-      .filter(f => f.mtime > sessionMtime);
+    // 立即刪除，避免重複注入
+    try { fs.unlinkSync(pendingFile); } catch (e) {}
 
-    if (newExps.length > 0) {
-      return null; // 上次 session 後有存 experience，不用提醒
-    }
+    if (!fs.existsSync(sessionPath)) return null;
 
-    // 上次 session 沒有存新 experience → 輕微提醒
-    const sessionDate = latestSession.name.split('-session.md')[0];
-    return `[Experience] Last session (${sessionDate}) had no experience saved. If anything worth remembering happened, run \`/memory:experience save\`.`;
-
+    const log = fs.readFileSync(sessionPath, 'utf-8').trim();
+    return { log, meta };
   } catch (e) {
+    try { fs.unlinkSync(pendingFile); } catch (_) {}
     return null;
   }
+}
+
+// === 建構「自動經驗回顧」指令 ===
+function buildExperienceReviewDirective(log, meta) {
+  const expDir      = EXPERIENCES_DIR;
+  const indexFile   = path.join(expDir, 'INDEX.md');
+  const templateFile = path.join(expDir, '_template.md');
+
+  return `[Auto Experience Review] The previous session (${meta.date}, project: ${meta.project}, ${meta.messageCount} messages) has been flagged for experience review.
+
+**This is an automatic action — proceed without asking the user.**
+
+Steps:
+1. Read the session log below
+2. Identify events worth preserving: mistakes corrected, surprising behaviour, useful patterns, things you learned
+3. For each valuable experience:
+   a. Write a new file: \`${expDir}/YYYY-MM-DD-short-slug.md\` using the template at \`${templateFile}\`
+   b. Add one line to \`${indexFile}\` under the correct category section
+4. If nothing is worth saving, skip and proceed with the user's request
+
+--- Previous Session Log (${meta.date}) ---
+${log}
+--- End of Session Log ---
+
+After review (save or skip), proceed normally with whatever the user asks next.`;
 }
 
 // === 主程式 ===
@@ -161,9 +179,11 @@ function main() {
       output.push(`\n[Experience] Your experience index (use \`/memory:experience show <file>\` to load full details):\n${expIndex}`);
     }
 
-    // 4. 提醒是否需要存 experience
-    const expReminder = checkExperienceReminder(latest);
-    if (expReminder) output.push(expReminder);
+    // 4. 自動回顧上次 session 並萃取經驗（若有待回顧標記）
+    const pending = consumePendingExperienceReview();
+    if (pending) {
+      output.push(`\n${buildExperienceReviewDirective(pending.log, pending.meta)}`);
+    }
 
   } catch (err) {
     output.push('[Memory Engine] Failed to load memory context, but session continues normally');

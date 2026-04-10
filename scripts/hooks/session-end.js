@@ -241,6 +241,23 @@ ${parsed.filesModified.length > 0 ? parsed.filesModified.map(f => `- ${f}`).join
     fs.writeFileSync(path.join(SESSIONS_DIR, filename), summary, 'utf-8');
     debugLog(`Session summary saved: ${filename} (${agentLabel})`);
 
+    // 標記「待經驗回顧」— session-start 下次開始時注入給 AI 自動處理
+    // 只有 substantial session 才標記（訊息數 >= 5 或有檔案異動）
+    const hasFileMods = parsed.filesModified.length > 0;
+    const msgCount    = parsed.userMessages.length;
+    if (msgCount >= 5 || hasFileMods) {
+      const pendingFile = path.join(SESSIONS_DIR, '.pending-experience-review.json');
+      fs.writeFileSync(pendingFile, JSON.stringify({
+        sessionFile:  filename,
+        date:         dateStr,
+        project:      projectTag,
+        agent:        agentLabel,
+        messageCount: msgCount,
+        hasFileMods
+      }, null, 2), 'utf-8');
+      debugLog(`Pending experience review flagged: ${filename}`);
+    }
+
     // Auto-commit memory + experiences（本地 commit，不 push）
     try {
       const { execSync } = require('child_process');
