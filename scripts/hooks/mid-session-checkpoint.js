@@ -71,8 +71,9 @@ function main(inputData) {
     let data;
     try { data = JSON.parse(inputData); } catch (e) { return; }
 
-    const sessionId = data.session_id || 'unknown';
-    const prompt = (data.prompt || '').trim().substring(0, 200);
+    const sessionId = data.session_id || data.sessionId || 'unknown';
+    // Claude Code: data.prompt / Gemini CLI: data.prompt or data.user_message
+    const prompt = (data.prompt || data.user_message || data.message || '').trim().substring(0, 200);
     if (!prompt) return;
 
     const state = loadState();

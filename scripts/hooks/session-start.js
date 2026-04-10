@@ -181,8 +181,11 @@ function main() {
     if (latest) {
       const content = fs.readFileSync(latest.path, 'utf-8').trim();
       if (content && content.length >= 20) {
-        const date = latest.name.split('-session.md')[0];
-        output.push(`[Session Hook] Last session summary (${date}):\n${content}`);
+        const dateSlug = latest.name.split('-session.md')[0];
+        // 從 summary 裡抽 Agent 欄位（若有）
+        const agentMatch = content.match(/\*\*Agent:\*\*\s*(.+)/);
+        const agentHint = agentMatch ? ` [by ${agentMatch[1].trim()}]` : '';
+        output.push(`[Session Hook] 上次工作摘要（${dateSlug}${agentHint})：\n${content}`);
       }
     } else {
       output.push('[Session Hook] No recent session found — fresh start!');

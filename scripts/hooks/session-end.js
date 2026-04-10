@@ -229,6 +229,36 @@ function cleanOldSessions() {
   }
 }
 
+// === 從 checkpoint state 撈 messages（Gemini fallback）===
+function loadFromCheckpointState(sessionId) {
+  const stateFile = path.join(SESSIONS_DIR, '.checkpoint-state.json');
+  try {
+    if (!fs.existsSync(stateFile)) return null;
+    const state = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
+
+    // 優先用 session_id 對應
+    if (sessionId && state[sessionId] && state[sessionId].messages?.length > 0) {
+      return state[sessionId].messages;
+    }
+
+    // fallback：取最近活躍的 session
+    const sessions = Object.values(state)
+      .filter(s => s.messages?.length > 0 && s.lastActivity)
+      .sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
+    return sessions.length > 0 ? sessions[0].messages : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// === 偵測呼叫來源 ===
+function detectAgent(data) {
+  if (data.transcript_path) return 'Claude Code';
+  if (data.agent === 'gemini' || data.agent_name === 'gemini') return 'Gemini CLI';
+  // 透過 transcript_path 缺失判斷為非 Claude
+  return 'Gemini CLI';
+}
+
 // === 主程式 ===
 function main(inputData) {
   debugLog('=== session-end start ===');
@@ -237,9 +267,21 @@ function main(inputData) {
     let data;
     try { data = JSON.parse(inputData); } catch (e) { debugLog(`JSON parse error: ${e.message}`); return; }
 
+    const agentLabel = detectAgent(data);
     const transcriptPath = data.transcript_path;
-    const parsed = parseTranscript(transcriptPath);
-    if (!parsed || parsed.userMessages.length === 0) { debugLog('No user messages, skipping'); return; }
+    let parsed = parseTranscript(transcriptPath);
+
+    // Fallback for Gemini CLI (no JSONL transcript)
+    if (!parsed || parsed.userMessages.length === 0) {
+      debugLog(`Transcript unavailable (${agentLabel}), trying checkpoint state...`);
+      const messages = loadFromCheckpointState(data.session_id);
+      if (!messages || messages.length === 0) {
+        debugLog('No messages found in checkpoint state either, skipping');
+        return;
+      }
+      parsed = { userMessages: messages, toolsUsed: [], filesModified: [], toolCalls: [] };
+      debugLog(`Loaded ${messages.length} messages from checkpoint state`);
+    }
 
     ensureDir(SESSIONS_DIR);
     cleanOldSessions();
@@ -256,6 +298,7 @@ function main(inputData) {
 
     const summary = `# Session: ${dateStr}
 **Project:** ${projectTag}
+**Agent:** ${agentLabel}
 **Title:** ${titleHint}
 **Time:** ${timeStr}
 **Messages:** ${parsed.userMessages.length}
@@ -271,9 +314,9 @@ ${parsed.filesModified.length > 0 ? parsed.filesModified.map(f => `- ${f}`).join
 `;
 
     fs.writeFileSync(path.join(SESSIONS_DIR, filename), summary, 'utf-8');
-    debugLog(`Session summary saved: ${filename}`);
+    debugLog(`Session summary saved: ${filename} (${agentLabel})`);
 
-    // 踩坑偵測
+    // 踩坑偵測（Claude 才有完整 toolCalls 資料）
     const pitfalls = detectPitfalls(parsed);
     if (pitfalls.length > 0) savePitfalls(pitfalls);
 
