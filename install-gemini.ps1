@@ -67,6 +67,9 @@ const configuredHooks = {
     { type:'command', command:'node ~/.claude/scripts/hooks/memory-sync.js' },
     { type:'command', command:'node ~/.claude/scripts/hooks/mid-session-checkpoint.js' }
   ]}],
+  PostToolUse: [{ matcher:'*', hooks:[
+    { type:'command', command:'node ~/.claude/scripts/hooks/post-tool-logger.js' }
+  ]}],
   PreToolUse: [
     { matcher:'Bash',  hooks:[{ type:'command', command:'node ~/.claude/scripts/hooks/pre-push-check.js' }] },
     { matcher:'Write', hooks:[{ type:'command', command:'node ~/.claude/scripts/hooks/write-guard.js' }] }

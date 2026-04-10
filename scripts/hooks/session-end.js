@@ -236,7 +236,6 @@ function loadFromCheckpointState(sessionId) {
     if (!fs.existsSync(stateFile)) return null;
     const state = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
 
-    // 優先用 session_id 對應
     if (sessionId && state[sessionId] && state[sessionId].messages?.length > 0) {
       return state[sessionId].messages;
     }
@@ -246,6 +245,25 @@ function loadFromCheckpointState(sessionId) {
       .filter(s => s.messages?.length > 0 && s.lastActivity)
       .sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
     return sessions.length > 0 ? sessions[0].messages : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// === 從 post-tool-logger state 撈 tool 資料（Gemini fallback）===
+function loadFromToolState(sessionId) {
+  const stateFile = path.join(SESSIONS_DIR, '.gemini-tool-state.json');
+  try {
+    if (!fs.existsSync(stateFile)) return null;
+    const state = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
+
+    if (sessionId && state[sessionId]) return state[sessionId];
+
+    // fallback：最近活躍的
+    const sessions = Object.values(state)
+      .filter(s => s.lastActivity)
+      .sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
+    return sessions.length > 0 ? sessions[0] : null;
   } catch (e) {
     return null;
   }
@@ -273,14 +291,23 @@ function main(inputData) {
 
     // Fallback for Gemini CLI (no JSONL transcript)
     if (!parsed || parsed.userMessages.length === 0) {
-      debugLog(`Transcript unavailable (${agentLabel}), trying checkpoint state...`);
-      const messages = loadFromCheckpointState(data.session_id);
+      debugLog(`Transcript unavailable (${agentLabel}), trying checkpoint + tool state...`);
+
+      const messages  = loadFromCheckpointState(data.session_id);
+      const toolState = loadFromToolState(data.session_id);
+
       if (!messages || messages.length === 0) {
-        debugLog('No messages found in checkpoint state either, skipping');
+        debugLog('No messages found in any state, skipping');
         return;
       }
-      parsed = { userMessages: messages, toolsUsed: [], filesModified: [], toolCalls: [] };
-      debugLog(`Loaded ${messages.length} messages from checkpoint state`);
+
+      parsed = {
+        userMessages:  messages,
+        toolsUsed:     toolState?.tools      || [],
+        filesModified: toolState?.files      || [],
+        toolCalls:     toolState?.toolCalls  || []
+      };
+      debugLog(`Gemini fallback: ${messages.length} msgs, ${parsed.toolsUsed.length} tools, ${parsed.filesModified.length} files`);
     }
 
     ensureDir(SESSIONS_DIR);
